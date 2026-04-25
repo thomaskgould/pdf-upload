@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Flipbook</title>
+
+<!-- PDF.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- StPageFlip from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/page-flip/2.0.7/js/page-flip.browser.js"></script>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #1a1a1e;
+    --surface: #242428;
+    --surface-hover: #2e2e33;
+    --border: #38383f;
+    --text: #e8e8ec;
+    --text-dim: #8e8e96;
+    --accent: #c9a55a;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.8rem 1.6rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .toolbar .file-name {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toolbar .file-name span { color: var(--accent); }
+
+  .toolbar-center {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .toolbar-center button {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, border-color 0.2s;
+    font-size: 1.1rem;
+  }
+
+  .toolbar-center button:hover { background: var(--surface-hover); border-color: var(--accent); }
+
+  .page-indicator {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    min-width: 80px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .toolbar-right button {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1rem;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .toolbar-right button:hover { background: var(--surface-hover); border-color: var(--accent); }
+
+  /* ── Flipbook area ── */
+  .flipbook-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(ellipse at center, rgba(201,165,90,0.04) 0%, transparent 70%);
+  }
+
+  #flipbook-container {
+    box-shadow: 0 20px 60px var(--shadow), 0 0 0 1px rgba(255,255,255,0.04);
+    border-radius: 4px;
+    transition: transform 0.25s ease;
+  }
+
+  .page-canvas {
+    display: block;
+    background: #fff;
+  }
+
+  /* ── Nav arrows ── */
+  .nav-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+    opacity: 0.7;
+  }
+
+  .nav-arrow:hover { opacity: 1; border-color: var(--accent); background: var(--surface-hover); }
+  .nav-arrow.left { left: 1rem; }
+  .nav-arrow.right { right: 1rem; }
+
+  /* ── Loading overlay ── */
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+  }
+
+  #loading-overlay h2 {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.6rem;
+  }
+
+  #loading-overlay h2 span { color: var(--accent); }
+
+  .spinner {
+    width: 44px; height: 44px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  #loading-text { color: var(--text-dim); font-size: 0.95rem; }
+
+  .progress-bar-track {
+    width: min(300px, 70vw);
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  /* ── Error state ── */
+  #error-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  #error-screen .error-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  #error-screen h2 { font-family: 'Playfair Display', serif; font-size: 1.4rem; }
+  #error-screen p { color: var(--text-dim); font-size: 0.95rem; max-width: 420px; line-height: 1.6; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .toolbar { padding: 0.6rem 0.8rem; }
+    .toolbar .file-name { font-size: 0.95rem; max-width: 160px; }
+    .nav-arrow { width: 36px; height: 36px; font-size: 1rem; }
+    .nav-arrow.left { left: 0.3rem; }
+    .nav-arrow.right { right: 0.3rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Toolbar ── -->
+<div class="toolbar">
+  <div class="file-name">PDF <span>Flipbook</span></div>
+  <div class="toolbar-center">
+    <button onclick="prevPage()" title="Previous page">‹</button>
+    <span class="page-indicator" id="page-indicator">— / —</span>
+    <button onclick="nextPage()" title="Next page">›</button>
+  </div>
+  <div class="toolbar-right">
+    <button onclick="zoomOut()" title="Zoom out">−</button>
+    <span class="page-indicator" id="zoom-indicator">100%</span>
+    <button onclick="zoomIn()" title="Zoom in">+</button>
+  </div>
+</div>
+
+<!-- ── Flipbook ── -->
+<div class="flipbook-wrapper">
+  <button class="nav-arrow left" onclick="prevPage()" title="Previous">‹</button>
+  <div id="flipbook-container"></div>
+  <button class="nav-arrow right" onclick="nextPage()" title="Next">›</button>
+</div>
+
+<!-- ── Loading ── -->
+<div id="loading-overlay">
+  <h2>PDF <span>Flipbook</span></h2>
+  <div class="spinner"></div>
+  <div id="loading-text">Loading PDF…</div>
+  <div class="progress-bar-track">
+    <div class="progress-bar-fill" id="progress-bar"></div>
+  </div>
+</div>
+
+<!-- ── Error ── -->
+<div id="error-screen">
+  <div class="error-icon">⚠</div>
+  <h2>Could not load PDF</h2>
+  <p id="error-message">Make sure the PDF file exists at the specified path.</p>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  CONFIGURATION                                              ║
+// ║  Change this to the path of your PDF relative to            ║
+// ║  index.html in your GitHub repo.                            ║
+// ║                                                              ║
+// ║  Examples:                                                   ║
+// ║    './docs/handbook.pdf'                                     ║
+// ║    './my-file.pdf'           (root of repo)                  ║
+// ║    './assets/pdf/report.pdf'                                 ║
+// ╚══════════════════════════════════════════════════════════════╝
+const PDF_PATH = './docs/document.pdf';
+
+
+// ── PDF.js worker ──
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ── State ──
+let pageFlip = null;
+let currentScale = 1;
+const SCALE_STEP = 0.15;
+const BASE_DPI = 1.8;
+let totalPages = 0;
+let pageWidth = 0;
+let pageHeight = 0;
+
+// ── DOM ──
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingText    = document.getElementById('loading-text');
+const progressBar    = document.getElementById('progress-bar');
+const errorScreen    = document.getElementById('error-screen');
+const errorMessage   = document.getElementById('error-message');
+const flipbookContainer = document.getElementById('flipbook-container');
+const pageIndicator  = document.getElementById('page-indicator');
+const zoomIndicator  = document.getElementById('zoom-indicator');
+
+// ── Auto-load on page ready ──
+document.addEventListener('DOMContentLoaded', () => loadPDF(PDF_PATH));
+
+async function loadPDF(path) {
+  try {
+    loadingText.textContent = 'Fetching PDF…';
+    const pdfDoc = await pdfjsLib.getDocument(path).promise;
+    totalPages = pdfDoc.numPages;
+
+    // Dimensions from first page
+    const firstPage = await pdfDoc.getPage(1);
+    const viewport  = firstPage.getViewport({ scale: 1 });
+    const maxW = Math.min(window.innerWidth * 0.42, 560);
+    const displayScale = maxW / viewport.width;
+    pageWidth  = Math.round(viewport.width * displayScale);
+    pageHeight = Math.round(viewport.height * displayScale);
+
+    // Render all pages
+    const canvases = [];
+    for (let i = 1; i <= totalPages; i++) {
+      loadingText.textContent = `Rendering page ${i} of ${totalPages}…`;
+      progressBar.style.width = Math.round((i / totalPages) * 100) + '%';
+
+      const page = await pdfDoc.getPage(i);
+      const hiresScale = displayScale * BASE_DPI * window.devicePixelRatio;
+      const vp = page.getViewport({ scale: hiresScale });
+
+      const canvas  = document.createElement('canvas');
+      canvas.width  = vp.width;
+      canvas.height = vp.height;
+      canvas.style.width  = pageWidth + 'px';
+      canvas.style.height = pageHeight + 'px';
+      canvas.classList.add('page-canvas');
+
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      canvases.push(canvas);
+    }
+
+    buildFlipbook(canvases);
+    loadingOverlay.style.display = 'none';
+
+  } catch (err) {
+    console.error(err);
+    loadingOverlay.style.display = 'none';
+    errorMessage.textContent = `Could not load "${path}". Check that the file exists and the path is correct. (${err.message})`;
+    errorScreen.style.display = 'flex';
+  }
+}
+
+function buildFlipbook(canvases) {
+  flipbookContainer.innerHTML = '';
+
+  pageFlip = new St.PageFlip(flipbookContainer, {
+    width: pageWidth,
+    height: pageHeight,
+    size: 'fixed',
+    minWidth: pageWidth,
+    minHeight: pageHeight,
+    maxWidth: pageWidth,
+    maxHeight: pageHeight,
+    showCover: true,
+    maxShadowOpacity: 0.35,
+    mobileScrollSupport: true,
+    flippingTime: 800,
+    useMouseEvents: true,
+    swipeDistance: 30,
+    drawShadow: true,
+    autoSize: false,
+  });
+
+  const pages = canvases.map(c => {
+    const div = document.createElement('div');
+    div.className = 'page-canvas';
+    div.style.width  = pageWidth + 'px';
+    div.style.height = pageHeight + 'px';
+    div.style.background = '#fff';
+    div.appendChild(c);
+    return div;
+  });
+
+  pageFlip.loadFromHTML(pages);
+  pageFlip.on('flip', e => updatePageIndicator(e.data));
+  updatePageIndicator(0);
+}
+
+// ── Navigation ──
+function prevPage() { if (pageFlip) pageFlip.flipPrev(); }
+function nextPage() { if (pageFlip) pageFlip.flipNext(); }
+
+function updatePageIndicator(pageIndex) {
+  pageIndicator.textContent = `${pageIndex + 1} / ${totalPages}`;
+}
+
+// ── Zoom ──
+function zoomIn() {
+  currentScale = Math.min(currentScale + SCALE_STEP, 2.5);
+  applyZoom();
+}
+
+function zoomOut() {
+  currentScale = Math.max(currentScale - SCALE_STEP, 0.5);
+  applyZoom();
+}
+
+function applyZoom() {
+  flipbookContainer.style.transform = `scale(${currentScale})`;
+  flipbookContainer.style.transformOrigin = 'center center';
+  zoomIndicator.textContent = Math.round(currentScale * 100) + '%';
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if (!pageFlip) return;
+  if (e.key === 'ArrowLeft')  prevPage();
+  if (e.key === 'ArrowRight') nextPage();
+  if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
+  if (e.key === '-')                  { e.preventDefault(); zoomOut(); }
+});
+</script>
+
+</body>
+</html>
